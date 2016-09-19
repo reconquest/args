@@ -1,0 +1,221 @@
+#!/bin/bash
+
+set -euo pipefail
+
+:main() {
+    if [[ ! "$*" ]]; then
+        :usage
+
+        exit 1
+    fi
+
+    local name
+    if [[ "${1:0:1}" != "-" ]]; then
+        name=$1
+
+        shift
+    fi
+
+    local -a args
+    local -a short
+    local -a long
+    local -A values
+    local -A aliases
+    local -A opts
+
+    :getopt:make-spec args short long values aliases "$@"
+
+    if [[ "${args[0]:-}" != "--" ]]; then
+        echo 'error: -- must be specified to delimit options from incoming' \
+            'args string'
+
+        exit 3
+    fi >&2
+
+    args=("${args[@]:1}")
+
+    if (( ! ${#args[@]} )); then
+        exit 0
+    fi
+
+    if ! :getopt -Q short long "${args[@]}"; then
+        exit 1
+    fi
+
+    eval set -- "$(:getopt -q short long "${args[@]}")"
+
+    :getopt:parse opts args values aliases "$@"
+
+    if [[ "${name:-}" ]]; then
+        :print "$name" opts args
+    else
+        paste -d' ' <(printf '%s\n' "${!opts[@]}") <(printf '%q\n' "${opts[@]}")
+        if (( "${#args[@]}" )); then
+            printf '%s\n' '--'
+            printf '%q\n' "${args[@]}"
+        fi
+    fi
+}
+
+:getopt() {
+    local __settings__="$1"
+    local -n __short__="$2"
+    local -n __long__="$3"
+
+    shift 3
+
+    getopt ${__settings__:-} \
+        -o "$(printf "%s" "${__short__[@]:-}")" \
+        ${__long__+-l "$(printf "%s," "${__long__[@]}")"} \
+        -- "$@"
+}
+
+:getopt:make-spec() {
+    local -n __args__="$1"
+    local -n __short__="$2"
+    local -n __long__="$3"
+    local -n __values__="$4"
+    local -n __aliases__="$5"
+
+    local -a input=("${@:6}")
+
+    local opt
+    local variants=()
+
+    while (( ${#input[@]} )); do
+        opt=${input[0]%%,*}
+
+        case "${input[0]}" in
+            --)
+                break
+                ;;
+            -*:*)
+                __values__[${opt%:}]=true
+                ;;&
+            -*,-*)
+                IFS="," read -ra variants <<< "${input[0]#*,}"
+
+                for alias in "${variants[@]}"; do
+                    __aliases__[$alias]=${opt%:}
+
+                    if ${__values__[${opt%:}]:-false}; then
+                        alias+=":"
+                    fi
+
+                    :getopt:make-spec \
+                        _ \
+                        "$2" "$3" "$4" "$5" \
+                        "$alias"
+                done
+
+                ;;&
+            --*)
+                __long__+=(${opt#--*})
+                ;;
+            -*)
+                __short__+=(${opt#-*})
+                ;;
+            *)
+                echo "error: unexpected argument: '$opt'"
+                return 2
+                ;;
+        esac
+
+        input=("${input[@]:1}")
+    done >&2
+
+    if (( ${#input[@]} )); then
+        __args__=("${input[@]}")
+    fi
+}
+
+:getopt:parse() {
+    local -n __opts__="$1"
+    local -n __args__="$2"
+    local -n __values__="$3"
+    local -n __aliases__="$4"
+
+    shift 4
+
+    local opt
+    local value
+
+    while (( $# )); do
+        case "$1" in
+            --)
+                shift
+                break
+                ;;
+            -*)
+                opt=$1
+
+                if ! ${__values__[$opt]:-false}; then
+                    __opts__[$opt]=$(( ${__opts__[$opt]:-0}+1 ))
+                else
+                    shift
+
+                    __opts__[$opt]=$1
+                fi
+                ;;
+        esac
+
+        value=${__opts__[$opt]:-}
+
+        if [[ "${__aliases__[$opt]:-}" ]]; then
+            opt="${__aliases__[$opt]:-}"
+
+            __opts__[$opt]=$value
+        fi
+
+        for alias in "${!__aliases__[@]}"; do
+            if [[ "${__aliases__[$alias]}" == "$opt" ]]; then
+                __opts__[$alias]=${__opts__[$opt]}
+            fi
+        done
+
+        shift
+    done
+
+    __args__=("$@")
+}
+
+:print() {
+    local __name__="$1"
+    local -n __opts__="$2"
+    local -n __args__="$3"
+
+    local opt
+
+    printf 'declare -A %s=(' "$__name__"
+
+    for opt in "${!__opts__[@]}"; do
+        printf ' [%q]=%q' "$opt" "${__opts__[$opt]}"
+    done
+
+    printf '); set --'
+    printf ' %q' "${__args__[@]}"
+    printf '\n'
+}
+
+:usage() {
+    cat <<HELP
+Usage:
+    eval \$(args [<opts-var>] <specifier>... -- "\$@")
+
+    <specifier> = (-<n> | --<name>)[:][,(-<n>|--<name>)]...
+
+    -<name> or --<name>, which is followed by ":" if option has value,
+    optionally followed by "," and other option names, which
+    will define aliases for the first option.
+
+    <opts-var> define variable name which which will be used as a
+    return variable name. Without <opts-var> given tool will
+    dump parse result onto stdout.
+
+Example:
+    eval \$(args opts -c,--commit -m:,--message -- "\$@")
+
+HELP
+}
+
+:main "$@"
