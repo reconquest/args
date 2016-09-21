@@ -1,6 +1,6 @@
 # args
 
-**args** provide easy interface for parsing options in bash scripts.
+**args** provides easy interface for parsing options in bash scripts.
 
 The difference between **args** and getopt or getopts is that **args**
 require no boilerplate code to process parsed command line arguments.
