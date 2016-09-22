@@ -193,7 +193,9 @@ set -euo pipefail
     done
 
     printf '); set --'
-    printf ' %q' "${__args__[@]}"
+    if (( ${#__args__[@]} )); then
+        printf ' %q' "${__args__[@]}"
+    fi
     printf '\n'
 }
 
