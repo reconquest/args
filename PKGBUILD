@@ -1,5 +1,5 @@
-pkgname="args-git"
-pkgver=20160920.1_ec9e7b1
+pkgname="args"
+pkgver=20160922.4_9f3e82e
 pkgrel=1
 pkgdesc="Simple CLI argument parser for bash"
 arch=("i686" "x86_64")
@@ -9,7 +9,7 @@ makedepends=(
     "git"
 )
 source=(
-    "$pkgname::git+ssh://github.com/reconquest/args.git"
+    "args::git+ssh://github.com/reconquest/args.git"
 )
 md5sums=("SKIP")
 
